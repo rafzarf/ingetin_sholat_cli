@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// PrayerTimesResponse represents the structure of the JSON response from the AlAdhan API.
 type PrayerTimesResponse struct {
 	Code   int    `json:"code"`
 	Status string `json:"status"`
@@ -29,34 +30,36 @@ type PrayerTimesResponse struct {
 	} `json:"data"`
 }
 
+// Constants for API configuration
+const (
+	apiBaseURL = "http://api.aladhan.com/v1/timingsByCity"
+	city       = "Bandung"
+	country    = "Indonesia"
+	method     = "11" // Calculation method for Bandung
+)
+
 func main() {
 	fmt.Println("Salat Reminder CLI for Bandung, Indonesia")
 
 	for {
-		prayerTimes, err := getPrayerTimes()
+		prayerTimes, err := fetchPrayerTimes()
 		if err != nil {
-			fmt.Printf("Error fetching prayer times: %v\n", err)
+			handleError("Error fetching prayer times", err)
 			time.Sleep(time.Minute)
 			continue
 		}
 
-		fmt.Printf("Prayer times for %s:\n", prayerTimes.Data.Date.Readable)
-		fmt.Printf("Fajr: %s\n", prayerTimes.Data.Timings.Fajr)
-		fmt.Printf("Sunrise: %s\n", prayerTimes.Data.Timings.Sunrise)
-		fmt.Printf("Dhuhr: %s\n", prayerTimes.Data.Timings.Dhuhr)
-		fmt.Printf("Asr: %s\n", prayerTimes.Data.Timings.Asr)
-		fmt.Printf("Maghrib: %s\n", prayerTimes.Data.Timings.Maghrib)
-		fmt.Printf("Isha: %s\n", prayerTimes.Data.Timings.Isha)
-
+		displayPrayerTimes(prayerTimes)
 		checkAndNotifyPrayers(prayerTimes)
 
 		time.Sleep(time.Minute)
 	}
 }
 
-func getPrayerTimes() (*PrayerTimesResponse, error) {
+// fetchPrayerTimes retrieves prayer times from the AlAdhan API.
+func fetchPrayerTimes() (*PrayerTimesResponse, error) {
 	currentDate := time.Now().Format("02-01-2006")
-	url := fmt.Sprintf("http://api.aladhan.com/v1/timingsByCity/%s?city=Bandung&country=Indonesia&method=11", currentDate)
+	url := fmt.Sprintf("%s/%s?city=%s&country=%s&method=%s", apiBaseURL, currentDate, city, country, method)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -78,6 +81,18 @@ func getPrayerTimes() (*PrayerTimesResponse, error) {
 	return &prayerTimes, nil
 }
 
+// displayPrayerTimes prints formatted prayer times to the console.
+func displayPrayerTimes(prayerTimes *PrayerTimesResponse) {
+	fmt.Printf("\nPrayer times for %s:\n", prayerTimes.Data.Date.Readable)
+	fmt.Printf("%-10s %s\n", "Fajr:", prayerTimes.Data.Timings.Fajr)
+	fmt.Printf("%-10s %s\n", "Sunrise:", prayerTimes.Data.Timings.Sunrise)
+	fmt.Printf("%-10s %s\n", "Dhuhr:", prayerTimes.Data.Timings.Dhuhr)
+	fmt.Printf("%-10s %s\n", "Asr:", prayerTimes.Data.Timings.Asr)
+	fmt.Printf("%-10s %s\n", "Maghrib:", prayerTimes.Data.Timings.Maghrib)
+	fmt.Printf("%-10s %s\n", "Isha:", prayerTimes.Data.Timings.Isha)
+}
+
+// checkAndNotifyPrayers checks if it's time for any prayer and notifies if so.
 func checkAndNotifyPrayers(prayerTimes *PrayerTimesResponse) {
 	now := time.Now()
 	checkPrayer(now, prayerTimes.Data.Timings.Fajr, "Fajr")
@@ -87,15 +102,34 @@ func checkAndNotifyPrayers(prayerTimes *PrayerTimesResponse) {
 	checkPrayer(now, prayerTimes.Data.Timings.Isha, "Isha")
 }
 
+// checkPrayer checks if it's time for a specific prayer and prints a notification if so.
 func checkPrayer(now time.Time, prayerTime string, prayerName string) {
-	t, err := time.Parse("15:04", prayerTime)
+	prayerDateTime, err := parsePrayerTime(now, prayerTime)
 	if err != nil {
-		fmt.Printf("Error parsing prayer time: %v\n", err)
+		handleError("Error parsing prayer time", err)
 		return
 	}
 
-	prayerDateTime := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-	if now.After(prayerDateTime) && now.Sub(prayerDateTime) < time.Minute {
-		fmt.Printf("It's time for %s prayer!\n", prayerName)
+	if isWithinNotificationWindow(now, prayerDateTime) {
+		fmt.Printf("\nIt's time for %s prayer!\n", prayerName)
 	}
+}
+
+// parsePrayerTime converts a prayer time string to a time.Time object.
+func parsePrayerTime(date time.Time, timeStr string) (time.Time, error) {
+	t, err := time.Parse("15:04", timeStr)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, date.Location()), nil
+}
+
+// isWithinNotificationWindow checks if the current time is within one minute after the prayer time.
+func isWithinNotificationWindow(now, prayerTime time.Time) bool {
+	return now.After(prayerTime) && now.Sub(prayerTime) < time.Minute
+}
+
+// handleError prints an error message to the console.
+func handleError(message string, err error) {
+	fmt.Printf("%s: %v\n", message, err)
 }
